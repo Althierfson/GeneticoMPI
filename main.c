@@ -43,17 +43,17 @@ int main (int argc, char *argv[]){
 
     criarPopulacao();
 
+    MPI_Init(&argc, &argv); // inicializacao
+    MPI_Comm_rank(MPI_COMM_WORLD, &id); // Quem sou eu?
+    MPI_Comm_size(MPI_COMM_WORLD, &tam); // Quantos são?
+
     printf("Numero de população: %i.\n", NUM_POPULACAO);
     printf("Numero de itens: %i.\n", NUM_ITENS);
-    printf("Quantidade de Threads: %i.\n", NUM_THREADS);
+    printf("Quantidade de Processos: %i.\n", tam);
     printf("Quantidade de grações principais: %i.\n", MAX_GERACOES);
     printf("Quantidade de gerações das threads: %i.\n", MAX_GERTHREADS);
 
     tamanho = NUM_POPULACAO / NUM_PROCESSOS; // definindo o intervalo que cada thread manipulara
-
-    MPI_Init(&argc, &argv); // inicializacao
-    MPI_Comm_rank(MPI_COMM_WORLD, &id); // Quem sou eu?
-    MPI_Comm_size(MPI_COMM_WORLD, &tam); // Quantos são?
 
     if(id == 0){
         // Aqui ficara o processo responsavel por enviar as partes para os outros processos, bem como fazer a selação completa
@@ -61,21 +61,42 @@ int main (int argc, char *argv[]){
         
         for(pro=0;proc<tam;pro++){
 
+            MPI_Send(&tamanho, 1, MPI_INT, pro, 0, MPI_COMM_WORLD);
+
             for(i=0;i<tamanho;i++){
-                MPI_Send(&populacao[i], NUM_ITENS+2, MPI_INT, i, 0, MPI_COMM_WORLD);
+                MPI_Send(&populacao[i], NUM_ITENS+2, MPI_INT, pro, 0, MPI_COMM_WORLD);
             }
+
         }
 
         for(pro=0;proc<tam;proc++){
-            MPI_Recv(&populacao[i], NUM_ITENS+2, MPI_INT, i, 0, MPI_COMM_WORLD, &status)gir
+            MPI_Recv(&populacao[i], NUM_ITENS+2, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
         }
+        
+        selecao(populacao, NUM_POPULACAO);
 
     }else{
-        // Processos que receberam as partes e executaram
-    
+        
+        MPI_Recv(&tamanho, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
+        populacao = matriz(tamanho);
+
+        for(i=0;i<tamanho;i++){
+            MPI_Recv(&populacao[i], NUM_ITENS+2, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
+        }
+        
+        ger = 0;
+        while(ger <= Max_gerProc){
+            crossover(populacao, tamanho);
+            selecao(populacao, tamanho);
+
+            ger++;
+        }
+
+        for(i=0;i<tamanho;i++){
+                MPI_Send(&populacao[i], NUM_ITENS+2, MPI_INT, 0, 0, MPI_COMM_WORLD);
+            }
     }
 
-    MPI_Comm_size(MPI_COMM_WORLD, &tam); // obter o numero total de processos
     
     // Se for um vetor de vetores da pra enviar
 
@@ -92,6 +113,16 @@ int main (int argc, char *argv[]){
 
 // funções para o MPI
 
+int ** matriz(int tam){
+    int **m;
+
+    m = (int **)malloc((NUM_ITENS*2) * sizeof(int*))
+    for(int i=0;i<NUM_ITENS*2;i++){
+        m[i] = (int *)malloc((NUM_ITENS+2) * sizeof(int));
+    }
+
+    return m;
+}
 
 // funções para o MPI
 
@@ -158,16 +189,16 @@ void *prepararThread(void *agm){
     pthread_exit(NULL);
 }
 
-void crossover(struct agm *agm){
+void crossover(int **pop, int TAM){
     int pai1, pai2, i, j=0;
-    int sel[agm->TAM]; // guarda os cromossomos que já cruzaram
-    int div1, div2, posNew=agm->TAM;
+    int sel[TAM]; // guarda os cromossomos que já cruzaram
+    int div1, div2, posNew=TAM;
 
-    for(i=0;i<agm->TAM;i++){
+    for(i=0;i<TAM;i++){
         sel[i] = 0;
     }
 
-    while(posNew < (agm->TAM*2)){
+    while(posNew < (TAM*2)){
         do {
             pai1 = (int)rand() % agm->TAM;
         } while(sel[pai1]);
@@ -179,37 +210,37 @@ void crossover(struct agm *agm){
 
         div1 = ((int)rand() % ((NUM_ITENS / 2) - 20)) + 10;
         div2 = ((int)rand() % ((NUM_ITENS / 2) - 20)) + (NUM_ITENS / 2) + 10;
-        agm->intervalo[posNew][NUM_ITENS] = 0;
-        agm->intervalo[posNew][NUM_ITENS + 1] = 0;
-        agm->intervalo[posNew + 1][NUM_ITENS] = 0;
-        agm->intervalo[posNew + 1][NUM_ITENS + 1] = 0;
+        pop[posNew][NUM_ITENS] = 0;
+        pop[posNew][NUM_ITENS + 1] = 0;
+        pop[posNew + 1][NUM_ITENS] = 0;
+        pop[posNew + 1][NUM_ITENS + 1] = 0;
         for(i=0;i<div1;i++){
-            agm->intervalo[posNew][i] = agm->intervalo[pai1][i];
-            agm->intervalo[posNew][NUM_ITENS] += agm->intervalo[pai1][i] * itens[i][1];
-            agm->intervalo[posNew][NUM_ITENS + 1] += agm->intervalo[pai1][i] * itens[i][0];
-            agm->intervalo[posNew + 1][i] = agm->intervalo[pai2][i];
-            agm->intervalo[posNew + 1][NUM_ITENS] += agm->intervalo[pai2][i] * itens[i][1];
-            agm->intervalo[posNew + 1][NUM_ITENS + 1] += agm->intervalo[pai2][i] * itens[i][0];
+            pop[posNew][i] = pop[pai1][i];
+            pop[posNew][NUM_ITENS] += pop[pai1][i] * itens[i][1];
+            pop[posNew][NUM_ITENS + 1] += pop[pai1][i] * itens[i][0];
+            pop[posNew + 1][i] = pop[pai2][i];
+            pop[posNew + 1][NUM_ITENS] += pop[pai2][i] * itens[i][1];
+            pop[posNew + 1][NUM_ITENS + 1] += pop[pai2][i] * itens[i][0];
         }
         for(i=div1;i<div2;i++){
-            agm->intervalo[posNew][i] = populacao[pai2][i];
-            agm->intervalo[posNew][NUM_ITENS] += populacao[pai2][i] * itens[i][1];
-            agm->intervalo[posNew][NUM_ITENS + 1] += populacao[pai2][i] * itens[i][0];
-            agm->intervalo[posNew + 1][i] = populacao[pai1][i];
-            agm->intervalo[posNew + 1][NUM_ITENS] += populacao[pai1][i] * itens[i][1];
-            agm->intervalo[posNew + 1][NUM_ITENS + 1] += populacao[pai1][i] * itens[i][0];
+            pop[posNew][i] = populacao[pai2][i];
+            pop[posNew][NUM_ITENS] += populacao[pai2][i] * itens[i][1];
+            pop[posNew][NUM_ITENS + 1] += populacao[pai2][i] * itens[i][0];
+            pop[posNew + 1][i] = populacao[pai1][i];
+            pop[posNew + 1][NUM_ITENS] += populacao[pai1][i] * itens[i][1];
+            pop[posNew + 1][NUM_ITENS + 1] += populacao[pai1][i] * itens[i][0];
         }
         for(i=div2;i<NUM_ITENS;i++){
-            agm->intervalo[posNew][i] = agm->intervalo[pai1][i];
-            agm->intervalo[posNew][NUM_ITENS] += agm->intervalo[pai1][i] * itens[i][1];
-            agm->intervalo[posNew][NUM_ITENS + 1] += agm->intervalo[pai1][i] * itens[i][0];
-            agm->intervalo[posNew + 1][i] = agm->intervalo[pai2][i];
-            agm->intervalo[posNew + 1][NUM_ITENS] += agm->intervalo[pai2][i] * itens[i][1];
-            agm->intervalo[posNew + 1][NUM_ITENS + 1] += agm->intervalo[pai2][i] * itens[i][0];
+            pop[posNew][i] = pop[pai1][i];
+            pop[posNew][NUM_ITENS] += pop[pai1][i] * itens[i][1];
+            pop[posNew][NUM_ITENS + 1] += pop[pai1][i] * itens[i][0];
+            pop[posNew + 1][i] = pop[pai2][i];
+            pop[posNew + 1][NUM_ITENS] += pop[pai2][i] * itens[i][1];
+            pop[posNew + 1][NUM_ITENS + 1] += pop[pai2][i] * itens[i][0];
         }
 
-        mutacao(agm->intervalo, posNew);
-        mutacao(agm->intervalo, posNew + 1);
+        mutacao(pop, posNew);
+        mutacao(pop, posNew + 1);
 
         posNew += 2;
     }
