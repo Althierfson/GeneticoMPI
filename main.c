@@ -4,16 +4,9 @@
 #include <time.h>
 
 #define TAXA_MUTACAO 5
-#define MAX_GERACOES 1000
-#define MAX_GERTHREADS 100
-#define NUM_POPULACAO 10000
-#define NUM_THREADS 50
-
-struct agm{
-    int **intervalo;
-    int TAM;
-    struct agm *prox;
-};
+#define MAX_GERACOES 50
+#define MAX_GERPROC 100
+#define NUM_POPULACAO 500
 
 int NUM_ITENS, PESO_MAX;
 
@@ -22,55 +15,65 @@ int **populacao, **itens;
 //funções
 void criarPopulacao(void);
 void mutacao(int **matris, int i);
-void crossover(struct agm *agm);
+void crossover(int **pop, int TAM);
 void selecao(int **pop, int TAM);
 void teste(int i);
 void lerItens(void);
 void imprimirPop(int tam);
 int comparar(const void *c1, const void *c2);
 void *prepararThread(void *agm);
+int ** matriz(int tam);
 
 int main (int argc, char *argv[]){
     int i, j, ger = 0, rc, ind, t; // variaveis de controle
     int tamanho; // Tamanho do intervalo
     struct agm *agm=NULL, *novo=NULL, *percorre=NULL;
 
+    //variaveis MPI
+    int id, tam, pro;
+
     MPI_Status status;
-
-    srand(time(0));
-
-    lerItens();
-
-    criarPopulacao();
 
     MPI_Init(&argc, &argv); // inicializacao
     MPI_Comm_rank(MPI_COMM_WORLD, &id); // Quem sou eu?
     MPI_Comm_size(MPI_COMM_WORLD, &tam); // Quantos são?
 
-    printf("Numero de população: %i.\n", NUM_POPULACAO);
-    printf("Numero de itens: %i.\n", NUM_ITENS);
-    printf("Quantidade de Processos: %i.\n", tam);
-    printf("Quantidade de grações principais: %i.\n", MAX_GERACOES);
-    printf("Quantidade de gerações das threads: %i.\n", MAX_GERTHREADS);
 
-    tamanho = NUM_POPULACAO / NUM_PROCESSOS; // definindo o intervalo que cada thread manipulara
+    tamanho = NUM_POPULACAO / (tam-1); // definindo o intervalo que cada thread manipulara
 
-    if(id == 0){
-        // Aqui ficara o processo responsavel por enviar as partes para os outros processos, bem como fazer a selação completa
-        // vou jogar um função aqui
-        
-        for(pro=0;proc<tam;pro++){
+    if(id == 0){ // Aqui ficara o processo responsavel por enviar as partes para os outros processos, bem como fazer a selação completa
+
+        srand(time(0));
+
+        lerItens();
+
+        criarPopulacao();
+
+        printf("Numero de população: %i.\n", NUM_POPULACAO);
+        printf("Numero de itens: %i.\n", NUM_ITENS);
+        printf("Quantidade de Processos: %i.\n", tam);
+        printf("Quantidade de grações principais: %i.\n", MAX_GERACOES);
+        printf("Quantidade de gerações das threads: %i.\n", MAX_GERPROC);
+
+        i = 0;
+        for(pro=1;pro<tam;pro++){
 
             MPI_Send(&tamanho, 1, MPI_INT, pro, 0, MPI_COMM_WORLD);
 
-            for(i=0;i<tamanho;i++){
-                MPI_Send(&populacao[i], NUM_ITENS+2, MPI_INT, pro, 0, MPI_COMM_WORLD);
+            while(i<tamanho){
+                MPI_Send(populacao[i], NUM_ITENS+2, MPI_INT, pro, 0, MPI_COMM_WORLD);
+                i++;
             }
 
         }
 
-        for(pro=0;proc<tam;proc++){
-            MPI_Recv(&populacao[i], NUM_ITENS+2, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
+        i=0;
+        for(pro=1;pro<tam;pro++){
+
+            while(i<tamanho){
+                MPI_Recv(populacao[i], NUM_ITENS+2, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
+                i++;
+            }
         }
         
         selecao(populacao, NUM_POPULACAO);
@@ -81,11 +84,11 @@ int main (int argc, char *argv[]){
         populacao = matriz(tamanho);
 
         for(i=0;i<tamanho;i++){
-            MPI_Recv(&populacao[i], NUM_ITENS+2, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
+            MPI_Recv(populacao[i], NUM_ITENS+2, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
         }
         
         ger = 0;
-        while(ger <= Max_gerProc){
+        while(ger <= MAX_GERPROC){
             crossover(populacao, tamanho);
             selecao(populacao, tamanho);
 
@@ -93,8 +96,8 @@ int main (int argc, char *argv[]){
         }
 
         for(i=0;i<tamanho;i++){
-                MPI_Send(&populacao[i], NUM_ITENS+2, MPI_INT, 0, 0, MPI_COMM_WORLD);
-            }
+            MPI_Send(populacao[i], NUM_ITENS+2, MPI_INT, 0, 0, MPI_COMM_WORLD);
+        }
     }
 
     
@@ -109,6 +112,7 @@ int main (int argc, char *argv[]){
     imprimirPop(1);
     printf("Melhor valor %d com %d de peso\n", populacao[0][NUM_ITENS + 1], populacao[0][NUM_ITENS]);
 
+    MPI_Finalize();
 }
 
 // funções para o MPI
@@ -116,7 +120,7 @@ int main (int argc, char *argv[]){
 int ** matriz(int tam){
     int **m;
 
-    m = (int **)malloc((NUM_ITENS*2) * sizeof(int*))
+    m = (int **)malloc((NUM_ITENS*2) * sizeof(int*));
     for(int i=0;i<NUM_ITENS*2;i++){
         m[i] = (int *)malloc((NUM_ITENS+2) * sizeof(int));
     }
@@ -174,21 +178,6 @@ void lerItens(void){
     
 }
 
-// função das treads
-
-void *prepararThread(void *agm){
-    struct agm *pop = (struct agm*)agm;
-    int ger = 0;
-
-    while(ger < MAX_GERTHREADS){
-        crossover(pop);
-        selecao(pop->intervalo, pop->TAM);
-        ger++;
-    }
-    
-    pthread_exit(NULL);
-}
-
 void crossover(int **pop, int TAM){
     int pai1, pai2, i, j=0;
     int sel[TAM]; // guarda os cromossomos que já cruzaram
@@ -200,11 +189,11 @@ void crossover(int **pop, int TAM){
 
     while(posNew < (TAM*2)){
         do {
-            pai1 = (int)rand() % agm->TAM;
+            pai1 = (int)rand() % TAM;
         } while(sel[pai1]);
         sel[pai1] = 1;
         do {
-            pai2 = (int)rand() % agm->TAM;
+            pai2 = (int)rand() % TAM;
         } while(pai2 == pai1 || sel[pai2]);
         sel[pai2] = 1;
 
